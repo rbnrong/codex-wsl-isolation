@@ -4,7 +4,8 @@
    state_5 / thread_history_1 / goals_1 / memories_1 / queue_1 / logs_2 (*.sqlite + -wal/-shm),
    session_index.jsonl, sessions\\, archived_sessions\\
 2. config.toml: removes [projects."..."] blocks whose path starts with /home, /mnt or contains wsl,
-   plus integratedTerminalShell="wsl", projectlessWorkspaceRoot=\\\\wsl..., git-worktree-root=/home/...
+   plus projectlessWorkspaceRoot=\\\\wsl... and git-worktree-root=/home/... (paths the Windows host
+   cannot use). integratedTerminalShell is left alone: it only picks the terminal shell.
 3. sqlite\\codex.db: deletes desktop catalog rows + sync state for host 'local' (rebuilt on launch)
 4. .codex-global-state.json: drops remaining 'local' membership tags and projectless ids not in the catalog
 
@@ -45,8 +46,7 @@ for l in lines:
     if drop:
         continue
     st = l.strip()
-    if (st.startswith("integratedTerminalShell") and '"wsl"' in st) or \
-       (st.startswith("projectlessWorkspaceRoot") and "wsl" in st.lower()) or \
+    if (st.startswith("projectlessWorkspaceRoot") and "wsl" in st.lower()) or \
        (st.startswith("git-worktree-root") and "/home/" in st):
         removed.append(l)
         continue

@@ -51,7 +51,7 @@ Principle: **the WSL host owns everything that ran under WSL; the Windows host o
 - **Quit the desktop app completely** (tray icon → Quit). Check: `tasklist | findstr /i "ChatGPT codex"` is empty. Otherwise it rewrites the state files on exit.
 - `wsl --shutdown` before the big copy steps.
 - **Back up**: `C:\Users\<you>\.codex`, WSL `~/.codex` (and your old sqlite home), and `%LOCALAPPDATA%\Packages\OpenAI.Codex_*\LocalCache\Roaming\Codex`. A tar + robocopy to another drive is fine.
-- Every script defaults to **dry run**; add `--apply` to write. Windows-side scripts (`win_*.py`) run with Windows Python (`py -I script.py`), WSL-side scripts run inside WSL.
+- The migration scripts in steps 1–4 default to **dry run**. Add `--apply` to write changes. The backup command in step 5 immediately writes a snapshot and prunes old backups. Windows-side scripts (`win_*.py`) run with Windows Python (`py -I script.py`), WSL-side scripts run inside WSL.
 
 ## Steps
 
@@ -115,7 +115,7 @@ py -I scripts\windows\win_isolate_host.py --archive D:\codex-archive            
 py -I scripts\windows\win_isolate_host.py --archive D:\codex-archive --apply
 ```
 
-Moves (not deletes) the Windows host index (`state_5`, `thread_history_1`, ... + wal/shm), `session_index.jsonl`, `sessions\`, `archived_sessions\` to the archive; removes `/home`, `/mnt`, `\\wsl$` project-trust entries and WSL-only desktop keys from `config.toml`; deletes the desktop catalog rows for host `local` in `sqlite\codex.db`. On next launch the Windows host starts with an empty index; ChatGPT-linked projects re-sync from the cloud.
+Moves (not deletes) the Windows host index (`state_5`, `thread_history_1`, ... + wal/shm), `session_index.jsonl`, `sessions\`, `archived_sessions\` to the archive; removes `/home`, `/mnt`, `\\wsl$` project-trust entries plus `projectlessWorkspaceRoot` / `git-worktree-root` values that point into WSL; deletes the desktop catalog rows for host `local` in `sqlite\codex.db`. `integratedTerminalShell` is left as is (it only chooses the terminal shell). On next launch the Windows host starts with an empty index; ChatGPT-linked projects re-sync from the cloud.
 
 ### 5. Backup before every update (WSL)
 
@@ -124,13 +124,15 @@ install -m 755 scripts/wsl/codex-backup.sh ~/.local/bin/codex-backup
 CODEX_BACKUP_DEST=/mnt/d/codex-backup-wsl codex-backup
 ```
 
+Use a **dedicated** folder for `CODEX_BACKUP_DEST`. After the SQLite copies, tar archive and checksum manifest are written, the script publishes the snapshot under a name such as `20261121-040321`. An interrupted backup does not use a retention slot. Older, unmarked timestamp directories count only if their manifest lists a digest for the tar archive and every copied SQLite database. The script keeps the newest `CODEX_BACKUP_KEEP` completed snapshots (default 5). This is a positive decimal count, so `010` keeps ten and `08` keeps eight.
+
 ## Known limitations
 
 - The "cannot switch yet" dialog still appears on launch; click **Set up later**.
 - The sidebar may lazy-load; sessions with only `.zst` transcripts sometimes show late. They resume fine from CLI.
 - Desktop state format is internal and may change in any release. Scripts refuse to run if expected keys are missing.
 - WSL-side plugins (documents/spreadsheets/...) are not migrated; install them in the WSL connection when needed.
-- The desktop app may re-add `integratedTerminalShell = "wsl"` on launch. It is harmless (it only picks the integrated terminal shell); re-running `win_isolate_host.py` removes it again.
+- `s3_clone_index.py` rewrites only `threads.rollout_path`, which is what resume needs. Other stored paths keep pointing at the old Windows home (`/mnt/c/.../.codex`): writable roots inside `threads.sandbox_policy`, an occasional `cwd` such as `.codex/pets`, and roots of ChatGPT-linked projects in `project_roots`. These are historical metadata and did not affect loading or continuing sessions in testing; a resumed session applies the current sandbox settings.
 - A transcript that only exists as `.zst` resumes fine; the CLI's `resume` picker may hide sessions with `has_user_event = 0`, use `codex resume <id>`.
 
 ## Restore
@@ -155,7 +157,7 @@ Every script writes its originals next to the archive (or `*.pre-*` copies). To 
 **注意事项**：
 
 - 每一步之前都要完全退出桌面端，包括托盘里的进程，并先做备份。
-- 脚本默认只演练（dry run），确认输出无误后再加 `--apply` 正式执行。
+- 第 1–4 步的迁移脚本默认只演练（dry run），确认输出后加 `--apply` 写入更改。第 5 步的备份命令会立即写入快照，并按 `CODEX_BACKUP_KEEP` 轮换已完成的备份。失败的备份不占保留名额。
 - 本方案只在上面列出的版本上验证过。
 
 ## License
